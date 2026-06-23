@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebFetch – URL Preview Service</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f6fa;
+      color: #2d3748;
+      min-height: 100vh;
+    }
+
+    /* ── 헤더 ── */
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 0 2rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #4f46e5;
+      letter-spacing: -0.3px;
+    }
+    .logo span { color: #a5b4fc; }
+    nav a {
+      text-decoration: none;
+      color: #64748b;
+      font-size: 0.875rem;
+      margin-left: 1.5rem;
+    }
+    nav a:hover { color: #4f46e5; }
+
+    /* ── 히어로 ── */
+    .hero {
+      text-align: center;
+      padding: 3.5rem 1rem 2rem;
+    }
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #1e293b;
+      margin-bottom: 0.5rem;
+    }
+    .hero p {
+      color: #64748b;
+      font-size: 0.95rem;
+    }
+
+    /* ── 카드 ── */
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      max-width: 760px;
+      margin: 0 auto 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #374151;
+    }
+
+    /* ── 폼 ── */
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 0.6rem 0.9rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus { border-color: #4f46e5; }
+
+    .btn {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-primary { background: #4f46e5; color: #fff; }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid #cbd5e1;
+      color: #374151;
+    }
+    .btn-outline:hover { background: #f1f5f9; }
+
+    /* ── 엔드포인트 토글 ── */
+    .toggle-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .toggle-btn {
+      padding: 0.35rem 0.9rem;
+      border-radius: 20px;
+      border: 1px solid #e2e8f0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 500;
+      transition: all .15s;
+    }
+    .toggle-btn.active-weak  { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+    .toggle-btn.active-strong { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+
+    /* ── 결과 ── */
+    #result-area { display: none; }
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-ok   { background: #dcfce7; color: #15803d; }
+    .badge-err  { background: #fee2e2; color: #b91c1c; }
+    .badge-block{ background: #fef9c3; color: #854d0e; }
+
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 1rem 1.2rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      overflow-x: auto;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ── 스피너 ── */
+    .spinner {
+      display: none;
+      width: 18px; height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-left: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 설명 카드 ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      max-width: 760px;
+      margin: 0 auto 3rem;
+    }
+    .info-item {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.1rem 1.25rem;
+    }
+    .info-item .label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: #94a3b8;
+      margin-bottom: 0.3rem;
+    }
+    .info-item .value {
+      font-size: 0.9rem;
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      border-top: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Web<span>Fetch</span></div>
+  <nav>
+    <a href="#">Docs</a>
+    <a href="#">API</a>
+    <a href="#">About</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <h1>URL Preview Service</h1>
+  <p>원격 URL의 응답을 안전하게 미리 확인하세요.</p>
+</div>
+
+<!-- 입력 카드 -->
+<div class="card">
+  <h2>URL 요청</h2>
+
+  <div class="toggle-row">
+    <button class="toggle-btn active-weak" id="btn-weak"  onclick="selectEndpoint('weak')">
+      /fetch-weak &nbsp;⚠
+    </button>
+    <button class="toggle-btn" id="btn-strong" onclick="selectEndpoint('strong')">
+      /fetch-strong &nbsp;✓
+    </button>
+  </div>
+
+  <div class="input-row">
+    <input type="text" id="url-input" placeholder="https://images.example.com/photo.jpg" />
+    <button class="btn btn-primary" onclick="doFetch()">
+      Fetch
+    </button>
+    <div class="spinner" id="spinner"></div>
+  </div>
+
+  <div style="font-size:0.8rem; color:#94a3b8;">
+    허용 도메인: <code>images.example.com</code>, <code>cdn.example.com</code>
+  </div>
+</div>
+
+<!-- 결과 카드 -->
+<div class="card" id="result-area">
+  <div class="result-header">
+    <span style="font-size:0.9rem; font-weight:600;">응답 결과</span>
+    <span class="badge" id="status-badge">200 OK</span>
+    <span style="font-size:0.8rem; color:#94a3b8;" id="endpoint-label"></span>
+  </div>
+  <pre id="result-body"></pre>
+</div>
+
+<!-- 정보 카드 3개 -->
+<div class="info-grid">
+  <div class="info-item">
+    <div class="label">Weak 엔드포인트</div>
+    <div class="value">netloc 기반 검증<br><small style="color:#94a3b8;">@ · \ 컨퓨전에 취약</small></div>
+  </div>
+  <div class="info-item">
+    <div class="label">Strong 엔드포인트</div>
+    <div class="value">hostname + DNS 검증<br><small style="color:#94a3b8;">리다이렉트 차단</small></div>
+  </div>
+  <div class="info-item">
+    <div class="label">내부 목표</div>
+    <div class="value">internal-api:8080<br><small style="color:#94a3b8;">외부 직접 접근 불가</small></div>
+  </div>
+</div>
+
+<footer>WebFetch Demo &copy; 2026 &mdash; 로컬 실습 전용</footer>
+
+<script>
+  let endpoint = 'weak';
+
+  function selectEndpoint(ep) {
+    endpoint = ep;
+    document.getElementById('btn-weak').className   = 'toggle-btn' + (ep === 'weak'   ? ' active-weak'   : '');
+    document.getElementById('btn-strong').className = 'toggle-btn' + (ep === 'strong' ? ' active-strong' : '');
+  }
+
+  async function doFetch() {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url) return;
+
+    const spinner = document.getElementById('spinner');
+    spinner.style.display = 'block';
+
+    const resultArea = document.getElementById('result-area');
+    resultArea.style.display = 'none';
+
+    try {
+      const res = await fetch(`/fetch-${endpoint}?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+
+      const badge = document.getElementById('status-badge');
+      const body  = document.getElementById('result-body');
+      const label = document.getElementById('endpoint-label');
+
+      label.textContent = `/fetch-${endpoint}`;
+
+      if (data.error) {
+        badge.textContent = 'Blocked';
+        badge.className = 'badge badge-block';
+      } else {
+        badge.textContent = `HTTP ${data.status}`;
+        badge.className = data.status === 200 ? 'badge badge-ok' : 'badge badge-err';
+      }
+
+      body.textContent = JSON.stringify(data, null, 2);
+      resultArea.style.display = 'block';
+    } catch (e) {
+      document.getElementById('result-body').textContent = '요청 실패: ' + e.message;
+      document.getElementById('result-area').style.display = 'block';
+    } finally {
+      spinner.style.display = 'none';
+    }
+  }
+
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doFetch();
+  });
+</script>
+
+</body>
+</html>

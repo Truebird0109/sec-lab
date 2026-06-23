@@ -4,5 +4,6 @@ RUN pip install flask requests --no-cache-dir
 
 WORKDIR /app
 COPY app/vuln_app.py .
+COPY app/templates/ templates/
 
 CMD ["python", "vuln_app.py"]

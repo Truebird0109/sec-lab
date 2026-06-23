@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import requests
 import socket
 import ipaddress
@@ -27,7 +27,8 @@ PRIVATE_RANGES = [
 def is_safe_weak(url: str) -> bool:
     parsed = urlparse(url)
     domain = parsed.netloc  # userinfo(@) 포함, 백슬래시 포함
-    return any(domain == d or domain.endswith("." + d) for d in ALLOWED_DOMAINS)
+    # 취약: netloc에 허용 도메인이 "포함"되는지만 확인 → @ / \ 컨퓨전에 뚫림
+    return any(d in domain for d in ALLOWED_DOMAINS)
 
 
 # ──────────────────────────────────────────────────────────
@@ -68,6 +69,11 @@ def is_safe_strong(url: str) -> bool:
 
 
 # ── 엔드포인트 ────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
 
 @app.route("/fetch-weak")
 def fetch_weak():
